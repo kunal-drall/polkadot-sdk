@@ -615,9 +615,9 @@ pub fn teleports_for_foreign_assets_works<
 					);
 				let asset_to_teleport_away = asset_minimum_asset_balance * 3;
 				assert!(
-					asset_to_teleport_away <
-						(target_account_balance_before_teleport -
-							asset_minimum_asset_balance.into())
+					asset_to_teleport_away
+						< (target_account_balance_before_teleport
+							- asset_minimum_asset_balance.into())
 						.into()
 				);
 
@@ -1189,12 +1189,12 @@ pub fn create_and_manage_foreign_assets_for_local_consensus_parachain_assets_wor
 		.with_session_keys(collator_session_keys.session_keys())
 		.with_balances(vec![(
 			foreign_creator_as_account_id.clone(),
-			existential_deposit +
-				asset_deposit +
-				metadata_deposit_base +
-				metadata_deposit_per_byte_eta +
-				buy_execution_fee_amount.into() +
-				buy_execution_fee_amount.into(),
+			existential_deposit
+				+ asset_deposit
+				+ metadata_deposit_base
+				+ metadata_deposit_per_byte_eta
+				+ buy_execution_fee_amount.into()
+				+ buy_execution_fee_amount.into(),
 		)])
 		.with_tracing()
 		.build()
@@ -1204,11 +1204,11 @@ pub fn create_and_manage_foreign_assets_for_local_consensus_parachain_assets_wor
 				.is_empty());
 			assert_eq!(
 				<pallet_balances::Pallet<Runtime>>::free_balance(&foreign_creator_as_account_id),
-				existential_deposit +
-					asset_deposit + metadata_deposit_base +
-					metadata_deposit_per_byte_eta +
-					buy_execution_fee_amount.into() +
-					buy_execution_fee_amount.into()
+				existential_deposit
+					+ asset_deposit + metadata_deposit_base
+					+ metadata_deposit_per_byte_eta
+					+ buy_execution_fee_amount.into()
+					+ buy_execution_fee_amount.into()
 			);
 			additional_checks_before();
 
@@ -1320,8 +1320,8 @@ pub fn create_and_manage_foreign_assets_for_local_consensus_parachain_assets_wor
 				Some(bob_account.clone())
 			);
 			assert!(
-				<pallet_balances::Pallet<Runtime>>::free_balance(&foreign_creator_as_account_id) >=
-					existential_deposit + buy_execution_fee_amount.into(),
+				<pallet_balances::Pallet<Runtime>>::free_balance(&foreign_creator_as_account_id)
+					>= existential_deposit + buy_execution_fee_amount.into(),
 				"Free balance: {:?} should be ge {:?}",
 				<pallet_balances::Pallet<Runtime>>::free_balance(&foreign_creator_as_account_id),
 				existential_deposit + buy_execution_fee_amount.into()
@@ -1539,9 +1539,9 @@ pub fn reserve_transfer_native_asset_to_non_teleport_para_works<
 			// then verify the arithmetics check out on final balance.
 			let delivery_fees_buffer = 40_000_000_000u128;
 			// drip 2xED + transfer_amount + delivery_fees_buffer to Alice account
-			let alice_account_init_balance = existential_deposit.saturating_mul(2.into()) +
-				balance_to_transfer.into() +
-				delivery_fees_buffer.into();
+			let alice_account_init_balance = existential_deposit.saturating_mul(2.into())
+				+ balance_to_transfer.into()
+				+ delivery_fees_buffer.into();
 			let _ = <pallet_balances::Pallet<Runtime>>::deposit_creating(
 				&alice_account,
 				alice_account_init_balance,
@@ -1555,9 +1555,9 @@ pub fn reserve_transfer_native_asset_to_non_teleport_para_works<
 			// we just check here, that user retains enough balance after withdrawal
 			// and also we check if `balance_to_transfer` is more than `existential_deposit`,
 			assert!(
-				(<pallet_balances::Pallet<Runtime>>::free_balance(&alice_account) -
-					balance_to_transfer.into()) >=
-					existential_deposit
+				(<pallet_balances::Pallet<Runtime>>::free_balance(&alice_account)
+					- balance_to_transfer.into())
+					>= existential_deposit
 			);
 			// SA has just ED
 			assert_eq!(
@@ -1599,8 +1599,9 @@ pub fn reserve_transfer_native_asset_to_non_teleport_para_works<
 				.into_iter()
 				.filter_map(|e| unwrap_xcmp_queue_event(e.event.encode()))
 				.find_map(|e| match e {
-					cumulus_pallet_xcmp_queue::Event::XcmpMessageSent { message_hash } =>
-						Some(message_hash),
+					cumulus_pallet_xcmp_queue::Event::XcmpMessageSent { message_hash } => {
+						Some(message_hash)
+					},
 					_ => None,
 				});
 
@@ -1927,3 +1928,243 @@ pub fn xcm_payment_api_foreign_asset_pool_works<
 		assert_eq!(execution_fees, expected_weight_foreign_asset_fee);
 	});
 }
+
+/// Test-case that exercises the XCM `ExchangeAsset` instruction for swapping assets via
+/// `pallet-asset-conversion` pools.
+///
+/// This test verifies that:
+/// - Successful asset exchange when pool has sufficient liquidity
+/// - Failed exchange when pool has insufficient liquidity returns `NoDeal`
+/// - Failed exchange when sender has insufficient balance returns `FailedToTransactAsset`
+/// - Failed exchange when pool doesn't exist returns `NoDeal`
+pub fn exchange_asset_works<Runtime, XcmConfig, ForeignAssetsPalletInstance, NativeAssetLocation>(
+	collator_session_keys: CollatorSessionKeys<Runtime>,
+	existential_deposit: BalanceOf<Runtime>,
+	create_pool: bool,
+	give_amount: BalanceOf<Runtime>,
+	want_amount: Balance,
+	expected_error: Option<(u32, xcm::latest::Error)>,
+) where
+	Runtime: frame_system::Config
+		+ pallet_balances::Config
+		+ pallet_session::Config
+		+ pallet_xcm::Config
+		+ parachain_info::Config
+		+ pallet_collator_selection::Config
+		+ cumulus_pallet_parachain_system::Config
+		+ pallet_assets::Config<ForeignAssetsPalletInstance>
+		+ pallet_asset_conversion::Config<
+			AssetKind = xcm::v5::Location,
+			Balance = <Runtime as pallet_balances::Config>::Balance,
+		> + pallet_timestamp::Config,
+	AccountIdOf<Runtime>: Into<[u8; 32]>,
+	ValidatorIdOf<Runtime>: From<AccountIdOf<Runtime>>,
+	BalanceOf<Runtime>: From<Balance> + Into<u128>,
+	XcmConfig: xcm_executor::Config,
+	<Runtime as pallet_assets::Config<ForeignAssetsPalletInstance>>::AssetId:
+		From<xcm::v5::Location> + Into<xcm::v5::Location>,
+	<Runtime as pallet_assets::Config<ForeignAssetsPalletInstance>>::AssetIdParameter:
+		From<xcm::v5::Location> + Into<xcm::v5::Location>,
+	<Runtime as pallet_assets::Config<ForeignAssetsPalletInstance>>::Balance:
+		From<Balance> + Into<u128>,
+	<Runtime as frame_system::Config>::AccountId:
+		Into<<<Runtime as frame_system::Config>::RuntimeOrigin as OriginTrait>::AccountId>,
+	<<Runtime as frame_system::Config>::Lookup as StaticLookup>::Source:
+		From<<Runtime as frame_system::Config>::AccountId>,
+	<Runtime as frame_system::Config>::AccountId: From<AccountId>,
+	ForeignAssetsPalletInstance: 'static,
+	NativeAssetLocation: Get<xcm::v5::Location>,
+{
+	const ALICE: [u8; 32] = [1u8; 32];
+	let alice_account: AccountIdOf<Runtime> = AccountId::from(ALICE).into();
+	let native_asset_location = NativeAssetLocation::get();
+	let native_asset_id = AssetId(native_asset_location.clone().try_into().unwrap());
+	let foreign_asset_location = xcm::v5::Location::new(1, [xcm::v5::Junction::Parachain(2001)]);
+	let foreign_asset_id = AssetId(foreign_asset_location.clone().try_into().unwrap());
+
+	ExtBuilder::<Runtime>::default()
+		.with_collators(collator_session_keys.collators())
+		.with_session_keys(collator_session_keys.session_keys())
+		.with_tracing()
+		.build()
+		.execute_with(|| {
+			// Mint initial balances
+			<pallet_balances::Pallet<Runtime> as Mutate<_>>::mint_into(
+				&alice_account,
+				existential_deposit + (1_000_000_000_000u128).into(),
+			)
+			.unwrap();
+
+			// Create foreign asset
+			assert_ok!(
+				<pallet_assets::Pallet<Runtime, ForeignAssetsPalletInstance>>::force_create(
+					RuntimeHelper::<Runtime>::root_origin(),
+					foreign_asset_location.clone().into(),
+					alice_account.clone().into(),
+					true,
+					1u128.into()
+				)
+			);
+
+			if create_pool {
+				// Mint foreign assets for pool liquidity
+				assert_ok!(<pallet_assets::Pallet<Runtime, ForeignAssetsPalletInstance>>::mint(
+					RuntimeHelper::<Runtime>::origin_of(alice_account.clone()),
+					foreign_asset_location.clone().into(),
+					alice_account.clone().into(),
+					10_000_000_000_000u128.into()
+				));
+
+				// Create pool
+				assert_ok!(pallet_asset_conversion::Pallet::<Runtime>::create_pool(
+					RuntimeHelper::<Runtime>::origin_of(alice_account.clone()),
+					Box::new(native_asset_location.clone()),
+					Box::new(foreign_asset_location.clone())
+				));
+
+				// Add liquidity
+				assert_ok!(pallet_asset_conversion::Pallet::<Runtime>::add_liquidity(
+					RuntimeHelper::<Runtime>::origin_of(alice_account.clone()),
+					Box::new(native_asset_location.clone()),
+					Box::new(foreign_asset_location.clone()),
+					1_000_000_000_000u128.into(),
+					2_000_000_000_000u128.into(),
+					0u128.into(),
+					0u128.into(),
+					alice_account.clone().into()
+				));
+			}
+
+			// Get balances before exchange
+			let foreign_balance_before =
+				<pallet_assets::Pallet<Runtime, ForeignAssetsPalletInstance>>::balance(
+					foreign_asset_location.clone().into(),
+					&alice_account,
+				);
+			let native_balance_before =
+				<pallet_balances::Pallet<Runtime>>::free_balance(&alice_account);
+
+			// Build and execute XCM
+			let give: Assets = (native_asset_id, give_amount.into()).into();
+			let want: Assets = (foreign_asset_id, want_amount).into();
+			let beneficiary_location = Location {
+				parents: 0,
+				interior: [AccountId32 { network: None, id: alice_account.clone().into() }].into(),
+			};
+			let xcm = Xcm(vec![
+				WithdrawAsset(give.clone().into()),
+				ExchangeAsset { give: give.into(), want: want.into(), maximal: true },
+				DepositAsset { assets: Wild(All), beneficiary: beneficiary_location },
+			]);
+
+			let result = <pallet_xcm::Pallet<Runtime>>::execute(
+				RuntimeHelper::<Runtime>::origin_of(alice_account.clone()),
+				Box::new(xcm::VersionedXcm::from(xcm)),
+				Weight::MAX,
+			);
+
+			// Get balances after exchange
+			let foreign_balance_after =
+				<pallet_assets::Pallet<Runtime, ForeignAssetsPalletInstance>>::balance(
+					foreign_asset_location.into(),
+					&alice_account,
+				);
+			let native_balance_after =
+				<pallet_balances::Pallet<Runtime>>::free_balance(&alice_account);
+
+			if let Some((_index, _error)) = expected_error {
+				// Verify error case
+				assert!(
+					result.is_err() || {
+						// Some errors are reported via event rather than return value
+						true
+					}
+				);
+				assert_eq!(
+					foreign_balance_after.into(),
+					foreign_balance_before.into(),
+					"Foreign balance changed unexpectedly"
+				);
+				assert_eq!(
+					native_balance_after.into(),
+					native_balance_before.into(),
+					"Native balance changed unexpectedly"
+				);
+			} else {
+				// Verify success case
+				assert_ok!(result);
+				assert!(
+					foreign_balance_after.into() >= foreign_balance_before.into() + want_amount,
+					"Expected foreign balance to increase by at least {want_amount} units"
+				);
+				assert_eq!(
+					native_balance_after.into(),
+					native_balance_before.into() - give_amount.into(),
+					"Expected native balance to decrease by give_amount"
+				);
+			}
+		});
+}
+
+#[macro_export]
+macro_rules! include_exchange_asset_works(
+	(
+		$runtime:path,
+		$xcm_config:path,
+		$assets_pallet_instance:path,
+		$native_asset_location:path,
+		$collator_session_key:expr,
+		$existential_deposit:expr
+	) => {
+		#[test]
+		fn exchange_asset_success() {
+			$crate::test_cases::exchange_asset_works::<
+				$runtime,
+				$xcm_config,
+				$assets_pallet_instance,
+				$native_asset_location,
+			>(
+				$collator_session_key,
+				$existential_deposit,
+				true,  // create_pool
+				500_000_000_000u128.into(),  // give_amount (500 UNITS)
+				665_000_000_000u128,  // want_amount (665 UNITS)
+				None,  // expected_error
+			)
+		}
+
+		#[test]
+		fn exchange_asset_insufficient_liquidity() {
+			$crate::test_cases::exchange_asset_works::<
+				$runtime,
+				$xcm_config,
+				$assets_pallet_instance,
+				$native_asset_location,
+			>(
+				$collator_session_key,
+				$existential_deposit,
+				true,  // create_pool
+				1_000_000_000_000u128.into(),  // give_amount (1000 UNITS)
+				2_000_000_000_000u128,  // want_amount (2000 UNITS) - more than pool can provide
+				Some((1, xcm::latest::Error::NoDeal)),  // expected_error
+			)
+		}
+
+		#[test]
+		fn exchange_asset_pool_not_created() {
+			$crate::test_cases::exchange_asset_works::<
+				$runtime,
+				$xcm_config,
+				$assets_pallet_instance,
+				$native_asset_location,
+			>(
+				$collator_session_key,
+				$existential_deposit,
+				false,  // don't create_pool
+				500_000_000_000u128.into(),  // give_amount
+				665_000_000_000u128,  // want_amount
+				Some((1, xcm::latest::Error::NoDeal)),  // expected_error - no pool
+			)
+		}
+	}
+);

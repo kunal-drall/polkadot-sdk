@@ -1008,6 +1008,15 @@ asset_test_utils::include_create_and_manage_foreign_assets_for_local_consensus_p
 	})
 );
 
+asset_test_utils::include_exchange_asset_works!(
+	Runtime,
+	XcmConfig,
+	ForeignAssetsInstance,
+	xcm_config::WestendLocation,
+	collator_session_keys(),
+	ExistentialDeposit::get()
+);
+
 fn bridging_to_asset_hub_rococo() -> TestBridgingConfig {
 	let _ = PolkadotXcm::force_xcm_version(
 		RuntimeOrigin::root(),
